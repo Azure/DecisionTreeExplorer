@@ -315,24 +315,4 @@ options <- list(width = 1000, height = 1000)
 shinyApp(ui, server,  options=options)
 ```
 
-# Instructions
-
-
-Choose a model file from the drop-down list. These models are decision trees that have been trained on one subset of data (the training dataset), and their performance has been validated on another subset (the test data). The test set performance indicates how well the model works on data it has not seen before.
-
-Use the "complexity adjustment" control to make the model simpler or more complex by pruning the tree.
-
-Display the "training" dataset to see the model performance on the data it was trained on. Differences between training set performance and test set performance usually reflect overfitting.
-
-The lift plot shows a bar for each leaf in the tree. The width of the bar shows how many cases it covers, and the height shows the percent of those cases that are positive. The order of the bars is based on their height in the training set. If bars for the test set are not in order from tallest to shortest, this is a sign of overfitting.
-
-The cumulative gain plot is basically the integral of the lift plot, and it has the same x-axis. The dotted gray line shows what the performance of a perfect classifier would look like, and the yellow curve shows the performance of the unpruned tree. An unpruned tree will usually perform better on the training set than on the test set, due to overfitting.
-
-
-## TO DO:
-
-* documentation
-* standardize complexity control
-* visually distinguish leaf nodes
-* cumulative stats for leaf nodes
-
+Hosted on [github](https://github.com/Azure/DecisionTreeExplore).
