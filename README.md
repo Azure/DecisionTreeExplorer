@@ -1,10 +1,12 @@
 # Decision Tree Explorer
 
-This single-page Shiny app is designed to make it easy to visualize the effects of simplification (pruning) on the performance of decision trees. Here is a screenshot:
+This single-page Shiny app is intended to help people learn (and teach) about fundamentals of data science, and (hopefully) to make it easier for subject matter experts to participate in the initial rounds of the modeling process. The basic idea is to interactively visualize the effects of simplification (pruning) on the performance of decision trees, so that you can try to discover simple rules that describe or predict the realtionships between inputs and outcomes in the data. For more details see the [Powerpoint presentation](https://github.com/Azure/DecisionTreeExplorer/blob/master/Performance_vs_interpretability_BARUG_20170116.pptx). 
+
+Here is a screenshot of the app in action:
 
 ![screen_shot](https://raw.githubusercontent.com/Azure/DecisionTreeExplorer/master/DecisionTreeExplorer_screenshot.png)
 
-To see it in action, download the repo, open the RMarkdown file `decision_tree_explorer.Rmd` in RStudio, and run it.
+To run it yourself, download the repo, open the RMarkdown file `decision_tree_explorer.Rmd` in RStudio, and run it.
 
 Lift plots and cumulative gain curves are calculated from pre-computed values stored in the tree, so only the model (not the actual data) is required to visualize the performance of a pruned tree. The rule for reaching each node in the tree, as well as the number of cases and proportion of positive cases in the test set for each node are pre-computed and attached to the tree object, so the app only needs to perform simple calculations to draw the visualizations.
 
