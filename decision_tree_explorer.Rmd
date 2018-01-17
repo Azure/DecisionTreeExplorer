@@ -27,7 +27,7 @@ DATA_MODELS <- gsub("\\.Rds$", "", list.files(DATA_DIR, pattern="*.Rds"))
 
 loadTree <- function(data_file){
   tree <- readRDS(file.path(DATA_DIR, paste0(data_file, ".Rds")))
-  if (!("rpart" %in% class(tree))) tree <- as.rpart(tree) # handle rxDTree objects without having to know what they are
+  # rxDTree objects must be saved as rpart
   tree
 }
 
