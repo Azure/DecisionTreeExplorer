@@ -1,12 +1,12 @@
 ---
 title: "Decision Tree Explorer"
-subtitle: "Version 0.9e"
 author: "Microsoft AI&R Data Group Deep Partner Engagement Engineering Team"
 output: html_document
 runtime: shiny
 ---
 
 ```{r setup, include=FALSE}
+# Version 0.9e
 knitr::opts_chunk$set(echo=FALSE, message=FALSE)
 ```
 
