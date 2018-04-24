@@ -1,25 +1,22 @@
-
 ---
 title: "Decision Tree Explorer"
-author: "Microsoft AI&R Data Group Deep Partner Engagement Engineering Team"
+subtitle: "Microsoft Team Data Science Process"
+version: "Version 0.9f"
 output: html_document
 runtime: shiny
 ---
 
 ```{r setup, include=FALSE}
-# Version 0.9e
 knitr::opts_chunk$set(echo=FALSE, message=FALSE)
 ```
 
 ```{r config}
+library(jsonlite)
 library(dplyr)
-library(rpart)
-library(rpart.plot)
-library(rpart.utils)
 
 HIGHLIGHT_COLOR <- "red"
 
-DATA_DIR <- "test_data"
+DATA_DIR <- "new_newera"  # "../newera/newera_trees" # "test_data"
 
 DATA_MODELS <- gsub("\\.Rds$", "", list.files(DATA_DIR, pattern="*.Rds"))
 
@@ -30,7 +27,7 @@ DATA_MODELS <- gsub("\\.Rds$", "", list.files(DATA_DIR, pattern="*.Rds"))
 
 loadTree <- function(data_file){
   tree <- readRDS(file.path(DATA_DIR, paste0(data_file, ".Rds")))
-  # rxDTree objects must be saved as rpart
+  if (!("rpart" %in% class(tree))) tree <- as.rpart(tree) # handle rxDTree objects without having to know what they are
   tree
 }
 
@@ -109,28 +106,44 @@ plot_tree <- function(pTree, dataset, selectedNode=character(0)){
 }
 
 get_node_info <- function(nodeID, plotted_tree, dataset){
+  node_info <- list(nodeID=nodeID)
   leaf_val_df <- tree_performance_stats(plotted_tree)
-  node_row <- plotted_tree$frame[nodeID,] # leaf_val_df
+  node_row <- plotted_tree$frame[nodeID,]
+  node_info$rule <- node_row$rule
   if (dataset == "TEST"){
-    num_cases <- node_row$n_test
-    outcome <- node_row$yval_test
-    total_cases <- sum(leaf_val_df$n_test)
-    total_positive <- sum(leaf_val_df$TP_test)
+    node_info$num_cases <- node_row$n_test
+    node_info$outcome <- node_row$yval_test
+    node_info$total_cases <- sum(leaf_val_df$n_test)
+    node_info$total_positive <- sum(leaf_val_df$TP_test)
   } else {
-    num_cases <- node_row$n
-    outcome <- node_row$yval
-    total_cases <- sum(leaf_val_df$n)
-    total_positive <- sum(leaf_val_df$TP)
+    node_info$num_cases <- node_row$n
+    node_info$outcome <- node_row$yval
+    node_info$total_cases <- sum(leaf_val_df$n)
+    node_info$total_positive <- sum(leaf_val_df$TP)
   }
-  paste0("nodeID=", nodeID,
-         "\nnumber of cases=", num_cases, 
-         " (", round(100*num_cases/total_cases, 2), "% of total)",
-         "\npercent positive=", round(100 * outcome, 2),
-         " (", outcome * num_cases, " positive cases)",
-         "\noverall percent positive=", round(100 * total_positive/total_cases, 2),
-         " (relative lift=", round(100*outcome/(total_positive/total_cases), 2),"%)",
-         "\nrule=", node_row$rule
-  )
+  formula_parts <- as.character(TREE$terms)
+  node_info$model_formula <- paste0(formula_parts[2], formula_parts[1], formula_parts[3])
+  node_info
+}
+
+show_node_info <- function(nodeID, plotted_tree, dataset){
+  node_info <- get_node_info(nodeID, plotted_tree, dataset)
+  with(node_info, {
+    info <- paste0(ifelse(is.null(TREE$model_notes), '', paste0("notes: ", TREE$model_notes, "\n")),
+           "model formula: ", model_formula)
+    if (length(nodeID) > 0){
+       selected_node_info <- paste0("\nnodeID: ", nodeID,
+           "\nnumber of cases: ", num_cases, 
+           " (", round(100*num_cases/total_cases, 2), "% of total)",
+           "\npercent positive: ", round(100 * outcome, 2),
+           " (", outcome * num_cases, " positive cases)",
+           "\noverall percent positive: ", round(100 * total_positive/total_cases, 2),
+           " (relative lift: ", round(100*outcome/(total_positive/total_cases), 2),"%)",
+           "\nrule=", rule) 
+       info <- paste(info, selected_node_info)
+    }
+    info
+  })
 }
 
 plot_gain <- function(fullTree, prunedTree, dataset="TRAIN", selectedNode="None"){
@@ -148,7 +161,7 @@ plot_gain <- function(fullTree, prunedTree, dataset="TRAIN", selectedNode="None"
       leaf_values_pruned[[training_vars[var_name]]] <- leaf_values_pruned[[var_name]]
     }
   }
-
+  
   with(leaf_values_full,{ 
        # Performance of full model
        plot(c(0, 100*pop_fraction), c(0, 100*TPR), type='l', lwd=2, col="orange", 
@@ -172,7 +185,17 @@ plot_gain <- function(fullTree, prunedTree, dataset="TRAIN", selectedNode="None"
           lines(c(0, x, x, x), c(y, y, 0, 0), col=HIGHLIGHT_COLOR, lty=3)
         }
   })
-  abline(0, 1, col="blue")  
+  abline(0, 1, col="blue")
+  
+  # add gain curve for reference model if available
+  if (!is.null(fullTree$reference_model_gain)){
+    if(dataset=="TEST"){
+      reference_model_gain <- fullTree$reference_model_gain$test
+    } else {
+      reference_model_gain <- fullTree$reference_model_gain$train
+    }
+    with(reference_model_gain, lines(100*x, 100*y, lty=3, lwd=2, col="darkgreen"))
+  }
 
 }
 
@@ -232,7 +255,6 @@ library(shiny)
 
 TREE <- loadTree(DATA_MODELS[1])
 
-
 ui <- fluidPage(
   fluidRow(
     column(12,
@@ -252,6 +274,7 @@ ui <- fluidPage(
   fluidRow(
     column(8,
       fluidRow(plotOutput("treeplot", click = "treeplot_click")),
+      fluidRow(tableOutput("rule_table")),
       fluidRow(verbatimTextOutput("node_info"))
     ),
     column(4,
@@ -261,7 +284,6 @@ ui <- fluidPage(
   )
 )
 
-# input <- list(data_model="big_spender", std_complexity=50, dataset="TRAIN")
 server <- function(input, output) {
 
   CP <- NA
@@ -291,7 +313,6 @@ server <- function(input, output) {
     get_clicks()
     prunedTree <- PRUNED_TREE  # prune(TREE, cp=CP)
     PLOTTED_TREE <<- plot_tree(prunedTree, input$dataset, SELECTED_NODE)
-    # PRUNED_TREE <<- prunedTree  # save separately; PLOTTED_TREE$obj reorders segments (???)
   })
 
   output$gainplot <- renderPlot({
@@ -309,7 +330,35 @@ server <- function(input, output) {
   output$node_info <- renderText({
     get_clicks()
     prunedTree <- PRUNED_TREE
-    get_node_info(SELECTED_NODE, prunedTree, input$dataset)
+    show_node_info(SELECTED_NODE, prunedTree, input$dataset)
+  })
+  
+  get_simplified_rule_table <- function(original_rule){
+    if ( length(original_rule) == 0)
+      original_rule <- "click on a node in the tree above to see its rule"
+    if ( nchar(original_rule) == 0)
+      original_rule <- "root node has no rule"
+    rule_vector <- strsplit(original_rule, ' & ')[[1]]
+    get_rule_key <- function(rule){
+      # rule key is feature plus comparison operator
+      paste(strsplit(rule, ' ')[[1]][1:2], collapse=' ')
+    }
+    rule_hash <- new.env(hash = TRUE)
+    for (rule in rule_vector){
+      key <- get_rule_key(rule)
+      rule_hash[[key]] <- rule
+    }
+    simplified_rules <- unlist(mget(ls(rule_hash), rule_hash))
+    simplified_rules <- gsub('%in%', 'in', simplified_rules)
+    simplified_rules <- gsub('c(', '(', simplified_rules, fixed=TRUE)
+    data.frame(rule=simplified_rules)
+  }
+  
+  output$rule_table <- renderTable({
+    get_clicks()
+    prunedTree <- PRUNED_TREE
+    rule <- unlist(get_node_info(SELECTED_NODE, prunedTree, input$dataset)$rule)
+    get_simplified_rule_table(rule)
   })
 }
 
@@ -318,4 +367,22 @@ options <- list(width = 1000, height = 1000)
 shinyApp(ui, server,  options=options)
 ```
 
-Hosted on [github](https://github.com/Azure/DecisionTreeExplorer).
+# Instructions
+
+
+Choose a model file from the drop-down list. These models are decision trees that have been trained on one subset of data (the training dataset), and their performance has been validated on another subset (the test data). The test set performance helps us understand how well the model works on data it has not seen before.
+
+Use the "complexity adjustment" control to make the model simpler or more complex by pruning the tree.
+
+Display the "training" dataset to see the model performance on the data it was trained on. Differences between training set performance and test set performance usually reflect overfitting.
+
+The lift plot shows a bar for each leaf in the tree. The width of the bar shows how many cases it covers, and the height shows the percent of those cases that are positive. The order of the bars is based on their height in the training set. If bars for the test set are not in order from tallest to shortest, this is a sign of overfitting.
+
+The cumulative gain plot is basically the integral of the lift plot, and it has the same x-axis. The dotted gray line shows what the performance of a perfect classifier would look like, and the yellow curve shows the performance of the unpruned tree. An unpruned tree will usually perform better on the training set than on the test set, due to overfitting.
+
+
+## TO DO:
+
+* visually distinguish leaf nodes
+* cumulative stats for leaf nodes
+

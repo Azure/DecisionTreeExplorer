@@ -1,0 +1,68 @@
+---
+title: "Model Builder"
+output: html_document
+runtime: shiny
+---
+
+```{r setup, include=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(magrittr)
+source("decision_tree_explorer_lib.R")
+
+```
+
+
+
+```{r build_formula, echo=FALSE}
+MODEL_DIR <- "models"
+
+data_file <- "dataset.Rds"
+dataset <- readRDS(data_file)
+
+outcome_candidates <- "order_placed"
+input_candidates <- setdiff(names(dataset), outcome_candidates)
+
+tags$h3("Select Outcome")
+radioButtons("outcome_selection", NULL, choices=outcome_candidates)
+
+tags$h3("Select inputs")
+input_candidates %>%
+  lapply(function(cname) checkboxInput(cname, cname, FALSE)) %>%
+  do.call(inputPanel, .)
+
+
+get_formula <- function(in_vector){
+  outcome <- in_vector['outcome_selection']
+  input_features <- names(in_vector)[in_vector==TRUE]
+  paste(outcome, paste(input_features, collapse=' + '), sep=' ~ ')
+}
+
+textInput("model_name", "model name", value = "")
+
+textInput("model_notes", "model notes", value = "")
+
+run_model <- eventReactive(input$run_button, {
+  in_vector <- unlist(reactiveValuesToList(input))
+  form <- get_formula(in_vector)
+  in_training <- sample(c(TRUE, FALSE), nrow(dataset), replace=TRUE, prob=c(2/3,1/3))
+  #??? randomize by customer id ???
+  fit <- train_validated_tree(formula(form), dataset[in_training,], dataset[!in_training,])
+  fit$model_name <- gsub(' ', '_', input$model_name)
+  fit$model_notes <- input$model_notes
+  model_file_name <- paste0(fit$model_name, ".Rds")
+  saveRDS(fit, file.path(MODEL_DIR, model_file_name))
+  "Model finished."
+})
+
+tags$h3("Formula")
+renderText({
+  in_vector <- unlist(reactiveValuesToList(input))
+  get_formula(in_vector)
+})
+
+actionButton("run_button", "Fit model")
+
+renderText(run_model())
+
+
+```

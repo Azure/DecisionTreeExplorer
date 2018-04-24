@@ -2,12 +2,13 @@ library(rpart)
 library(rpart.utils)
 library(rpart.plot)
 library(dplyr)
+library('ROCR') # for reference model gain curve
 
 topN <- function(v, N=10, min_cases=500, other_label="Other"){
   library(dplyr)
   v <- as.character(v)
   v[is.na(v)] <- "missing"
-  v[v==""] <- "missing"  # are there really different kinds of missingness?
+  v[v==""] <- "missing"  # do we need different kinds of missingness?
   top_cats <- table(v) %>% sort(decreasing=TRUE) %>% head(n=N)
   top_cats <- top_cats[top_cats > min_cases]
   new_levels <- unique(c(names(top_cats), "missing", other_label))
@@ -95,11 +96,39 @@ evaluate_rule <- function(myRule, myData, outcome){
 train_validated_tree <- function(with_formula, training_set, test_set, ...){
   outcome <- as.character(with_formula[[2]])
   if (class(training_set[[outcome]]) != "logical") stop("outcome must be logical, not a factor")
-  validated_tree <- if(require("RevoScaleR")){
-    as.rpart(rxDTree(with_formula, training_set, ...)) # no dots in formula!
+  if(require("RevoScaleR")){
+    validated_tree <- as.rpart(rxDTree(with_formula, training_set, ...)) # no dots in formula!
+    reference_model <- rxDForest(with_formula, training_set)
+    outcome <- as.character(with_formula)[2]
+    
+    reference_pred_test <- rxPredict(reference_model, data=test_set, extraVarsToWrite=outcome)
+    pred_obj_test <- ROCR::prediction(reference_pred_test[[paste0(outcome, "_Pred")]], reference_pred_test[[outcome]])
+    gain_test <- ROCR::performance(pred_obj_test, "tpr", "rpp")
+    
+    reference_pred_train <- rxPredict(reference_model, data=training_set, extraVarsToWrite=outcome)
+    pred_obj_train <- ROCR::prediction(reference_pred_train[[paste0(outcome, "_Pred")]], reference_pred_train[[outcome]])
+    gain_train <- ROCR::performance(pred_obj_train, "tpr", "rpp")
+    
+    quantilize_gain <- function(x, y, N=100){
+      x_quantile <- quantile(x, probs=(0:N)/N)
+      x_cut <- cut(x, breaks=x_quantile, include.lowest=TRUE)
+      y_step <- aggregate(y, by=list(x_cut), max)$x
+      
+      data.frame(x=x_quantile, y=c(0, y_step))
+    }
+    
+    if (length(gain_test@x.values[[1]]) < 300){
+      test_df <- data.frame(x=gain_test@x.values[[1]], y=gain_test@y.values[[1]])
+      train_df <- data.frame(x=gain_train@x.values[[1]], y=gain_train@y.values[[1]])
+    } else {
+      test_df <- quantilize_gain(x=gain_test@x.values[[1]], y=gain_test@y.values[[1]])
+      train_df <- quantilize_gain(x=gain_train@x.values[[1]], y=gain_train@y.values[[1]])
+    }
+    
+    validated_tree$reference_model_gain <- list(test=test_df, train=train_df)
   } else {
     library("rpart")
-    rpart(with_formula, training_set, ...)
+    validated_tree <- rpart(with_formula, training_set, ...)
   }
   rule_strings <- get_rules(validated_tree)
   test_set_tabulation <- do.call("rbind", 
