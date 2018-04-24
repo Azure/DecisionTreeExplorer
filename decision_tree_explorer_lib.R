@@ -99,8 +99,7 @@ train_validated_tree <- function(with_formula, training_set, test_set, ...){
   if(require("RevoScaleR")){
     validated_tree <- as.rpart(rxDTree(with_formula, training_set, ...)) # no dots in formula!
     reference_model <- rxDForest(with_formula, training_set)
-    outcome <- as.character(with_formula)[2]
-    
+
     reference_pred_test <- rxPredict(reference_model, data=test_set, extraVarsToWrite=outcome)
     pred_obj_test <- ROCR::prediction(reference_pred_test[[paste0(outcome, "_Pred")]], reference_pred_test[[outcome]])
     gain_test <- ROCR::performance(pred_obj_test, "tpr", "rpp")
@@ -109,27 +108,56 @@ train_validated_tree <- function(with_formula, training_set, test_set, ...){
     pred_obj_train <- ROCR::prediction(reference_pred_train[[paste0(outcome, "_Pred")]], reference_pred_train[[outcome]])
     gain_train <- ROCR::performance(pred_obj_train, "tpr", "rpp")
     
-    quantilize_gain <- function(x, y, N=100){
-      x_quantile <- quantile(x, probs=(0:N)/N)
-      x_cut <- cut(x, breaks=x_quantile, include.lowest=TRUE)
-      y_step <- aggregate(y, by=list(x_cut), max)$x
-      
-      data.frame(x=x_quantile, y=c(0, y_step))
-    }
-    
-    if (length(gain_test@x.values[[1]]) < 300){
-      test_df <- data.frame(x=gain_test@x.values[[1]], y=gain_test@y.values[[1]])
-      train_df <- data.frame(x=gain_train@x.values[[1]], y=gain_train@y.values[[1]])
-    } else {
-      test_df <- quantilize_gain(x=gain_test@x.values[[1]], y=gain_test@y.values[[1]])
-      train_df <- quantilize_gain(x=gain_train@x.values[[1]], y=gain_train@y.values[[1]])
-    }
-    
-    validated_tree$reference_model_gain <- list(test=test_df, train=train_df)
   } else {
     library("rpart")
+    library("randomForest")
     validated_tree <- rpart(with_formula, training_set, ...)
+    
+    # modify formula for randomForest: convert outcome to factor in formula
+    form_parts <- as.character(with_formula)
+    rf_formula <- formula(sprintf("factor(%s) ~ %s", outcome, form_parts[3]))
+    reference_model <- randomForest(rf_formula, training_set)
+    
+    predict_rf <- function(model, test_data){
+      # Put predictions in the same format as rxPredict
+      # If you ever wanted an argument for %>%, here you go.
+      dep_var <- gsub(")", "", gsub("factor(", "", as.character(reference_model$terms)[2], fixed=TRUE), fixed=TRUE)
+      pred <- list()
+      # predictions are in a matrix, second column is for TRUE
+      pred[[paste0(dep_var, "_Pred")]] <- predict(model, test_data, type="prob")[,2]
+      pred[[dep_var]] <- test_data[[dep_var]]
+      pred <- as.data.frame(pred)
+      pred
+    }
+    
+    reference_pred_test <- predict_rf(reference_model, test_set)
+    pred_obj_test <- ROCR::prediction(reference_pred_test[[paste0(outcome, "_Pred")]], reference_pred_test[[outcome]])
+    gain_test <- ROCR::performance(pred_obj_test, "tpr", "rpp")
+    
+    reference_pred_train <- predict_rf(reference_model, training_set)
+    pred_obj_train <- ROCR::prediction(reference_pred_train[[paste0(outcome, "_Pred")]], reference_pred_train[[outcome]])
+    gain_train <- ROCR::performance(pred_obj_train, "tpr", "rpp")
+    
   }
+  
+  quantilize_gain <- function(x, y, N=100){
+    x_quantile <- quantile(x, probs=(0:N)/N)
+    x_cut <- cut(x, breaks=x_quantile, include.lowest=TRUE)
+    y_step <- aggregate(y, by=list(x_cut), max)$x
+    
+    data.frame(x=x_quantile, y=c(0, y_step))
+  }
+  
+  if (length(gain_test@x.values[[1]]) < 300){
+    test_df <- data.frame(x=gain_test@x.values[[1]], y=gain_test@y.values[[1]])
+    train_df <- data.frame(x=gain_train@x.values[[1]], y=gain_train@y.values[[1]])
+  } else {
+    test_df <- quantilize_gain(x=gain_test@x.values[[1]], y=gain_test@y.values[[1]])
+    train_df <- quantilize_gain(x=gain_train@x.values[[1]], y=gain_train@y.values[[1]])
+  }
+  
+  validated_tree$reference_model_gain <- list(test=test_df, train=train_df)
+  
   rule_strings <- get_rules(validated_tree)
   test_set_tabulation <- do.call("rbind", 
                                  lapply(rule_strings,
