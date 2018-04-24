@@ -16,7 +16,7 @@ library(dplyr)
 
 HIGHLIGHT_COLOR <- "red"
 
-DATA_DIR <- "new_newera"  # "../newera/newera_trees" # "test_data"
+DATA_DIR <- "models"
 
 DATA_MODELS <- gsub("\\.Rds$", "", list.files(DATA_DIR, pattern="*.Rds"))
 
