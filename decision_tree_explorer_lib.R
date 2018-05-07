@@ -178,7 +178,7 @@ split_by_var <- function(dataset, split_var){
   list(training = dataset[in_training,], test=dataset[!in_training,])
 }
 
-generate_titanic_validated_tree <- function(){
+generate_titanic_validated_trees <- function(){
   library(rpart.plot)
   data(ptitanic)
   # head(ptitanic)
@@ -191,13 +191,15 @@ generate_titanic_validated_tree <- function(){
   # outcome must be logical, not a factor
   qtitanic$survived <- qtitanic$survived == "survived"
   
-  in_training <- sample(c(TRUE, FALSE), nrow(qtitanic), prob=c(2/3, 1/3), replace=TRUE)
+  kclass <- sample(LETTERS[1:3], nrow(qtitanic), replace=TRUE)
   
-  titanic_validated_tree <- train_validated_tree(survived ~ pclass + sex + age + sibsp + parch, 
-                                                 qtitanic[in_training,], 
-                                                 qtitanic[!in_training,])
-  # titanic_validated_tree$frame
+  survived_form <- survived ~ pclass + sex + age + sibsp + parch
+  titanic_A <- train_validated_tree(survived_form, qtitanic[kclass!='A',], qtitanic[kclass=='A',])
+  titanic_B <- train_validated_tree(survived_form, qtitanic[kclass!='B',], qtitanic[kclass=='B',])
+  titanic_C <- train_validated_tree(survived_form, qtitanic[kclass!='C',], qtitanic[kclass=='C',])
   
-  saveRDS(titanic_validated_tree, "test_data/titanic_validated_tree.Rds")
+  saveRDS(titanic_A, "models/titanic_A.Rds")
+  saveRDS(titanic_B, "models/titanic_B.Rds")
+  saveRDS(titanic_C, "models/titanic_C.Rds")
 }
 
