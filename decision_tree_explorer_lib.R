@@ -200,3 +200,4 @@ generate_titanic_validated_tree <- function(){
   
   saveRDS(titanic_validated_tree, "test_data/titanic_validated_tree.Rds")
 }
+

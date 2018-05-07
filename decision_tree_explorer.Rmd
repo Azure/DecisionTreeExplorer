@@ -16,7 +16,7 @@ library(dplyr)
 
 HIGHLIGHT_COLOR <- "red"
 
-DATA_DIR <- "models"
+DATA_DIR <- "models"  # "../newera/newera_trees" # "test_data"
 
 DATA_MODELS <- gsub("\\.Rds$", "", list.files(DATA_DIR, pattern="*.Rds"))
 
@@ -103,6 +103,54 @@ plot_tree <- function(pTree, dataset, selectedNode=character(0)){
                          else
                            ifelse(row.names(pTree$frame)==selectedNode, 
                                 HIGHLIGHT_COLOR, 'black')) 
+}
+
+simplify_rule <- function(rule_vector){
+  rule_hash <- new.env(hash = TRUE)
+  
+  get_rule_key_value <- function(rule){
+    # rule key is feature plus comparison operator
+    SEP <- ' '
+    rule_atoms <- strsplit(rule, SEP)[[1]]
+    key <- paste(rule_atoms[1:2], collapse=SEP)
+    value <- paste(rule_atoms[-c(1,2)], collapse=SEP)
+    if (substr(value, 1, 2) == "c(")
+      value <- eval(parse(text=value))
+    list(key=key, value=value)
+  }
+  
+  lapply(rule_vector, get_rule_key_value)
+  
+  for (rule in rule_vector){
+    key_val <- get_rule_key_value(rule)
+    key <- key_val$key
+    value <- key_val$value
+    if(is.null(rule_hash[[key]])) rule_hash[[key]] <- list()
+    rule_hash[[key]] <- append(rule_hash[[key]], list(value))
+  }
+  
+  simplified_rules_list <- mget(ls(rule_hash), rule_hash)
+  
+  srl <- lapply(setNames(nm=names(simplified_rules_list)), function(rname){
+    rule_value_list <- simplified_rules_list[[rname]]
+    if (grepl('%in%', rname)){
+      rule <- Reduce(intersect, rule_value_list)
+    } else {
+      rule <- tail(rule_value_list, 1)[[1]]
+    }
+    rule
+  })
+  
+  paste(names(srl), srl)
+}
+
+get_simplified_rule_table <- function(original_rule){
+  if ( length(original_rule) == 0)
+    original_rule <- "click on a node in the tree above to see its rule"
+  if ( nchar(original_rule) == 0)
+    original_rule <- "root node has no rule"
+  rule_vector <- strsplit(original_rule, ' & ')[[1]]
+  data.frame(rule=simplify_rule(rule_vector))
 }
 
 get_node_info <- function(nodeID, plotted_tree, dataset){
@@ -333,32 +381,11 @@ server <- function(input, output) {
     show_node_info(SELECTED_NODE, prunedTree, input$dataset)
   })
   
-  get_simplified_rule_table <- function(original_rule){
-    if ( length(original_rule) == 0)
-      original_rule <- "click on a node in the tree above to see its rule"
-    if ( nchar(original_rule) == 0)
-      original_rule <- "root node has no rule"
-    rule_vector <- strsplit(original_rule, ' & ')[[1]]
-    get_rule_key <- function(rule){
-      # rule key is feature plus comparison operator
-      paste(strsplit(rule, ' ')[[1]][1:2], collapse=' ')
-    }
-    rule_hash <- new.env(hash = TRUE)
-    for (rule in rule_vector){
-      key <- get_rule_key(rule)
-      rule_hash[[key]] <- rule
-    }
-    simplified_rules <- unlist(mget(ls(rule_hash), rule_hash))
-    simplified_rules <- gsub('%in%', 'in', simplified_rules)
-    simplified_rules <- gsub('c(', '(', simplified_rules, fixed=TRUE)
-    data.frame(rule=simplified_rules)
-  }
-  
   output$rule_table <- renderTable({
     get_clicks()
     prunedTree <- PRUNED_TREE
-    rule <- unlist(get_node_info(SELECTED_NODE, prunedTree, input$dataset)$rule)
-    get_simplified_rule_table(rule)
+    original_rule <- unlist(get_node_info(SELECTED_NODE, prunedTree, input$dataset)$rule)
+    get_simplified_rule_table(original_rule)
   })
 }
 
